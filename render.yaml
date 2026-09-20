@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: skillswap
+    env: java
+    buildCommand: find src -name "*.java" > sources.txt && javac -d out @sources.txt
+    startCommand: java -cp out skillswap.Main
