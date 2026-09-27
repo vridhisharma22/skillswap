@@ -1,6 +1,0 @@
-services:
-  - type: web
-    name: skillswap
-    env: java
-    buildCommand: javac Main.java
-    startCommand: java Main

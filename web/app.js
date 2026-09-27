@@ -1,5 +1,8 @@
-let currentUser = null;
-
+const guestNav = document.getElementById("guestNav");
+const userNav = document.getElementById("userNav");
+const navName = document.getElementById("navName");
+const landing = document.getElementById("landing");
+const howSection = document.getElementById("how");
 const authPanel = document.getElementById("authPanel");
 const dashboard = document.getElementById("dashboard");
 const notice = document.getElementById("notice");
@@ -22,11 +25,21 @@ const loginPassword = document.getElementById("loginPassword");
 const signupName = document.getElementById("signupName");
 const signupEmail = document.getElementById("signupEmail");
 const signupPassword = document.getElementById("signupPassword");
+const signupConfirm = document.getElementById("signupConfirm");
 const signupSkill = document.getElementById("signupSkill");
 const signupWant = document.getElementById("signupWant");
 
+let currentUser = null;
+
 loginTab.addEventListener("click", () => setAuthMode("login"));
 signupTab.addEventListener("click", () => setAuthMode("signup"));
+document.getElementById("showLoginButton").addEventListener("click", () => {
+  setAuthMode("login");
+  authPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+document.getElementById("showSignupButton").addEventListener("click", showSignup);
+document.getElementById("heroJoinButton").addEventListener("click", showSignup);
+
 loginForm.addEventListener("submit", (event) => {
   event.preventDefault();
   loginUser();
@@ -40,35 +53,55 @@ matchesButton.addEventListener("click", loadMatches);
 updateButton.addEventListener("click", showUpdateForm);
 logoutButton.addEventListener("click", logout);
 
-setAuthMode("login");
+checkSession();
+
+function showSignup() {
+  setAuthMode("signup");
+  authPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function setAuthMode(mode) {
   const loginMode = mode === "login";
-
   loginForm.classList.toggle("hidden", !loginMode);
   signupForm.classList.toggle("hidden", loginMode);
   loginTab.classList.toggle("active", loginMode);
   signupTab.classList.toggle("active", !loginMode);
   panelTitle.textContent = loginMode ? "Welcome back" : "Create your profile";
   panelSubtitle.textContent = loginMode
-    ? "Log in to check your profile and see who you match with."
+    ? "Log in to see your profile and matches."
     : "Tell people what you can help with and what you want to learn.";
-  clearNotice();
 }
 
 function encode(data) {
   return Object.keys(data)
-    .map((key) => `${encodeURIComponent(key)}=${encodeFormValue(data[key])}`)
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
     .join("&");
 }
 
-function encodeFormValue(value) {
-  return encodeURIComponent(value).replaceAll("%40", "@");
+async function send(url, options) {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    ...options
+  });
+  const data = await response.json();
+  return { response, data };
+}
+
+async function checkSession() {
+  try {
+    const { response, data } = await send("/me");
+    if (response.ok) {
+      currentUser = data.user;
+      enterDashboard();
+    }
+  } catch (error) {
+    // server might not be up yet; the login form is still there
+  }
 }
 
 async function loginUser() {
   try {
-    const response = await fetch("/login", {
+    const { response, data } = await send("/login", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: encode({
@@ -77,26 +110,32 @@ async function loginUser() {
       })
     });
 
-    const data = await response.json();
     if (!response.ok) {
-      showNotice(data.message || "We could not log you in right now.", "error");
+      showNotice(data.message || "We could not log you in.", "error");
       return;
     }
 
     currentUser = data.user;
-    authPanel.classList.add("hidden");
-    dashboard.classList.remove("hidden");
-    showNotice("", "success");
-    syncDashboard();
-    showProfile();
+    enterDashboard();
+    showNotice("Welcome back.", "success");
   } catch (error) {
     showNotice("The server is not responding. Start the Java app and try again.", "error");
   }
 }
 
 async function signupUser() {
+  if (signupPassword.value !== signupConfirm.value) {
+    showNotice("Those two passwords are not the same.", "error");
+    return;
+  }
+
+  if (signupSkill.value.trim().toLowerCase() === signupWant.value.trim().toLowerCase()) {
+    showNotice("Pick different things to teach and learn.", "error");
+    return;
+  }
+
   try {
-    const response = await fetch("/signup", {
+    const { response, data } = await send("/signup", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: encode({
@@ -108,25 +147,44 @@ async function signupUser() {
       })
     });
 
-    const data = await response.json();
     if (!response.ok) {
       showNotice(data.message || "We could not create your account.", "error");
       return;
     }
 
-    signupForm.reset();
-    showNotice("Your account is ready. You can log in now.", "success");
-    setAuthMode("login");
-    loginEmail.value = data.user.email;
+    currentUser = data.user;
+    enterDashboard();
+    showNotice("You're in. Have a look at your matches.", "success");
   } catch (error) {
     showNotice("The server is not responding. Start the Java app and try again.", "error");
   }
 }
 
+function enterDashboard() {
+  landing.classList.add("hidden");
+  howSection.classList.add("hidden");
+  dashboard.classList.remove("hidden");
+  guestNav.classList.add("hidden");
+  userNav.classList.remove("hidden");
+  navName.textContent = currentUser.name;
+  syncDashboard();
+  showProfile();
+}
+
+function showLanding() {
+  landing.classList.remove("hidden");
+  howSection.classList.remove("hidden");
+  dashboard.classList.add("hidden");
+  guestNav.classList.remove("hidden");
+  userNav.classList.add("hidden");
+  loginForm.reset();
+  signupForm.reset();
+  setAuthMode("login");
+}
+
 function syncDashboard() {
   welcomeText.textContent = `Hi ${currentUser.name}`;
-  welcomeSummary.textContent = `Right now you can help with ${currentUser.skill}, and you want to learn ${currentUser.want}.`;
-  setActiveAction(profileButton);
+  welcomeSummary.textContent = `You can help with ${currentUser.skill}. You want to learn ${currentUser.want}.`;
 }
 
 function showProfile() {
@@ -138,7 +196,7 @@ function showProfile() {
   content.innerHTML = `
     <article class="profile-card">
       <h3>Your profile</h3>
-      <p>This is how other people will understand what you bring and what you are looking for.</p>
+      <p>This is what other people see when they match with you.</p>
       <div class="profile-grid">
         <div class="profile-stat">
           <strong>Name</strong>
@@ -169,8 +227,7 @@ async function loadMatches() {
   setActiveAction(matchesButton);
 
   try {
-    const response = await fetch(`/matches?email=${currentUser.email}`);
-    const data = await response.json();
+    const { response, data } = await send("/matches");
 
     if (!response.ok) {
       content.innerHTML = renderEmptyState(data.message || "We could not load your matches yet.");
@@ -178,7 +235,7 @@ async function loadMatches() {
     }
 
     if (!data.matches.length) {
-      content.innerHTML = renderEmptyState("No matches yet. Try updating your skills or goals to discover more people.");
+      content.innerHTML = renderEmptyState("No matches yet. Try changing your skill or your goal.");
       return;
     }
 
@@ -186,11 +243,11 @@ async function loadMatches() {
       <div class="match-list">
         ${data.matches.map((match) => `
           <article class="match-card">
-            <span class="match-tag">${escapeHtml(match.reason)}</span>
+            <span class="match-tag ${match.perfect ? "perfect" : ""}">${escapeHtml(match.reason)}</span>
             <h3>${escapeHtml(match.name)}</h3>
             <p><strong>Can help with:</strong> ${escapeHtml(match.skill)}</p>
             <p><strong>Wants to learn:</strong> ${escapeHtml(match.want)}</p>
-            <p><strong>Contact:</strong> ${escapeHtml(match.email)}</p>
+            <a class="mail-link" href="mailto:${escapeAttribute(match.email)}">Email ${escapeHtml(match.email)}</a>
           </article>
         `).join("")}
       </div>
@@ -209,59 +266,64 @@ function showUpdateForm() {
   content.innerHTML = `
     <form class="update-card" id="updateForm">
       <h3>Update your details</h3>
+      <p>Change these whenever your interests move around. Matching uses the latest version.</p>
       <label>
         <span>What can you help with?</span>
-        <input id="updateSkill" type="text" value="${escapeAttribute(currentUser.skill)}" required>
+        <input id="updateSkill" type="text" maxlength="40" value="${escapeAttribute(currentUser.skill)}" required>
       </label>
       <label>
         <span>What do you want to learn?</span>
-        <input id="updateWant" type="text" value="${escapeAttribute(currentUser.want)}" required>
+        <input id="updateWant" type="text" maxlength="40" value="${escapeAttribute(currentUser.want)}" required>
       </label>
       <button class="primary-button" type="submit">Save changes</button>
     </form>
   `;
 
-  document.getElementById("updateForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    const updateSkill = document.getElementById("updateSkill");
-    const updateWant = document.getElementById("updateWant");
-
-    try {
-      const response = await fetch("/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: encode({
-          email: currentUser.email,
-          skill: updateSkill.value.trim(),
-          want: updateWant.value.trim()
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        showNotice(data.message || "We could not update your profile.", "error");
-        return;
-      }
-
-      currentUser = data.user;
-      showNotice("Your profile has been updated.", "success");
-      syncDashboard();
-      showProfile();
-    } catch (error) {
-      showNotice("The server is not responding. Start the Java app and try again.", "error");
-    }
-  });
+  document.getElementById("updateForm").addEventListener("submit", saveProfile);
 }
 
-function logout() {
+async function saveProfile(event) {
+  event.preventDefault();
+
+  const skill = document.getElementById("updateSkill").value.trim();
+  const want = document.getElementById("updateWant").value.trim();
+
+  if (skill.toLowerCase() === want.toLowerCase()) {
+    showNotice("Pick different things to teach and learn.", "error");
+    return;
+  }
+
+  try {
+    const { response, data } = await send("/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: encode({ skill, want })
+    });
+
+    if (!response.ok) {
+      showNotice(data.message || "We could not update your profile.", "error");
+      return;
+    }
+
+    currentUser = data.user;
+    navName.textContent = currentUser.name;
+    showNotice("Saved.", "success");
+    syncDashboard();
+    showProfile();
+  } catch (error) {
+    showNotice("The server is not responding. Start the Java app and try again.", "error");
+  }
+}
+
+async function logout() {
+  try {
+    await send("/logout", { method: "POST" });
+  } catch (error) {
+    // even if the request fails, send them back to the landing page
+  }
+
   currentUser = null;
-  dashboard.classList.add("hidden");
-  authPanel.classList.remove("hidden");
-  loginForm.reset();
-  signupForm.reset();
-  clearNotice();
-  setAuthMode("login");
+  showLanding();
 }
 
 function setActiveAction(activeButton) {
@@ -271,24 +333,18 @@ function setActiveAction(activeButton) {
 }
 
 function showNotice(message, type) {
-  if (!message) {
-    clearNotice();
-    return;
-  }
-
   notice.textContent = message;
   notice.className = `notice ${type}`;
-}
-
-function clearNotice() {
-  notice.textContent = "";
-  notice.className = "notice hidden";
+  window.clearTimeout(showNotice.hideTimer);
+  showNotice.hideTimer = window.setTimeout(() => {
+    notice.className = "notice hidden";
+  }, 4000);
 }
 
 function renderEmptyState(message) {
   return `
     <article class="empty-state">
-      <h3>Nothing to show just yet</h3>
+      <h3>Nothing here yet</h3>
       <p>${escapeHtml(message)}</p>
     </article>
   `;
